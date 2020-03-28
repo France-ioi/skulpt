@@ -1,3 +1,4 @@
+const uuidv4 = require("uuid").v4;
 const hashMap = new Map();
 /**
  *
@@ -11,6 +12,20 @@ const hashMap = new Map();
 Sk.builtin.object = Sk.abstr.buildNativeClass("object", {
     constructor: function object() {
         Sk.asserts.assert(this instanceof Sk.builtin.object, "bad call to object, use 'new'");
+
+        // Sets the UUID.
+        this._ref_uuid = uuidv4();
+
+        /**
+         * This constructor is NOT called when an object is cloned.
+         * So the _uuid is always new.
+         */
+
+        this._uuid = uuidv4();
+
+        /**
+         * The internal dict $d doesn't exist here, so it's parent (this), is set elsewhere.
+         */
     },
     base: null,
     slots: {

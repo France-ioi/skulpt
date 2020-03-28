@@ -5,7 +5,7 @@
  * @extends {Sk.builtin.object}
  */
 Sk.builtin.list = Sk.abstr.buildNativeClass("list", {
-    constructor: function list(L) {
+    constructor: function list(L, uuid) {
         // this is an internal function and should be called with an array object
         if (L === undefined) {
             L = [];
@@ -14,8 +14,10 @@ Sk.builtin.list = Sk.abstr.buildNativeClass("list", {
             // internal calls to constructor can't suspend - avoid using this;
         }
         Sk.asserts.assert(this instanceof Sk.builtin.list, "bad call to list, use 'new' with an Array of python objects");
+        Sk.builtin.listInitPersistent(this, v, uuid);
         this.v = L;
         this.in$repr = false;
+        this.uuid = uuid;
     },
     slots: /** @lends {Sk.builtin.list.prototype}*/ {
         tp$getattr: Sk.generic.getAttr,

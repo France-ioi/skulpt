@@ -136,6 +136,7 @@ function tp$new(args, kwargs) {
         // klass is essentially a function that gives its instances a dict
         // if we support slots then we might need to have two versions of this
         this.$d = new Sk.builtin.dict();
+        Sk.builtin.registerParentReferenceInChild(this, this.$d);
     };
     setUpKlass($name, klass, bases, this.constructor);
 

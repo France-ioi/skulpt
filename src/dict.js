@@ -1,3 +1,5 @@
+const uuidv4 = require("uuid").v4;
+
 /** @typedef {Sk.builtin.object} */ var pyObject;
 /** @typedef {Sk.builtin.type|Function} */ var typeObject;
 
@@ -14,7 +16,7 @@
  *
  */
 Sk.builtin.dict = Sk.abstr.buildNativeClass("dict", {
-    constructor: function dict(L) {
+    constructor: function dict(L, uuid) {
         // calling new Sk.builtin.dict is an internal method that requires an array of key value pairs
         if (L === undefined) {
             L = [];
@@ -29,6 +31,28 @@ Sk.builtin.dict = Sk.abstr.buildNativeClass("dict", {
         }
         this.in$repr = false;
         this.$version = 0; // change version number anytime the keys change
+
+        // Sets the UUID.
+        this._ref_uuid = uuidv4();
+        if (uuid === undefined) {
+            this._uuid = uuidv4();
+
+            /*
+             * Set the parents.
+             *
+             * If uuid is provided, then it is a clone and the parents are
+             * copied during the clone.
+             */
+
+            this._parents = {};
+            for (let idx in this.buckets) {
+                const element = this.buckets[idx].items[0].rhs;
+
+                Sk.builtin.registerParentReferenceInChild(this, element);
+            }
+        } else {
+            this._uuid = uuid;
+        }
     },
     slots: /**@lends {Sk.builtin.dict.prototype}*/ {
         tp$getattr: Sk.generic.getAttr,

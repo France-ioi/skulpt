@@ -1,3 +1,52 @@
+# Modified version of Skulpt for FranceIOI
+
+The file *src/internalpython.js* should be created automatically when building the sources. If that's not the case, you should create it with the following content :
+
+    Sk.internalPy={"files":{"src/classmethod.py":"class classmethod(object):\n    \"Emulate PyClassMethod_Type() in Objects/funcobject.c\"\n\n    def __init__(self, f):\n        self.f = f\n\n    def __get__(self, obj, klass=None):\n        if klass is None:\n            klass = type(obj)\n        def newfunc(*args):\n            return self.f(klass, *args)\n        return newfunc\n","src/property.py":"class property(object):\n    \"Emulate PyProperty_Type() in Objects/descrobject.c\"\n\n    def __init__(self, fget=None, fset=None, fdel=None, doc=None):\n        self.fget = fget\n        self.fset = fset\n        self.fdel = fdel\n        if doc is None and fget is not None:\n            if hasattr(fget, '__doc__'):\n                doc = fget.__doc__\n            else:\n                doc = None\n        self.__doc__ = doc\n\n    def __get__(self, obj, objtype=None):\n        if obj is None:\n            return self\n        if self.fget is None:\n            raise AttributeError(\"unreadable attribute\")\n        return self.fget(obj)\n\n    def __set__(self, obj, value):\n        if self.fset is None:\n            raise AttributeError(\"can't set attribute\")\n        self.fset(obj, value)\n\n    def __delete__(self, obj):\n        if self.fdel is None:\n            raise AttributeError(\"can't delete attribute\")\n        self.fdel(obj)\n\n    def getter(self, fget):\n        return type(self)(fget, self.fset, self.fdel, self.__doc__)\n\n    def setter(self, fset):\n        return type(self)(self.fget, fset, self.fdel, self.__doc__)\n\n    def deleter(self, fdel):\n        return type(self)(self.fget, self.fset, fdel, self.__doc__)\n","src/staticmethod.py":"class staticmethod(object):\n    \"Emulate PyStaticMethod_Type() in Objects/funcobject.c\"\n\n    def __init__(self, f):\n        self.f = f\n\n    def __get__(self, obj, objtype=None):\n        return self.f\n"}}
+
+In this modified version, each modification of a variable 
+
+    v = X
+
+is transformed to
+
+    v = window.currentPythonRunner.reportValue(X, 'v');
+
+Objects, lists and dicts contains a unique *__uuid* field. Every time an object method is called, a list is modified, a dict is modified, a new reference is created with the same *__uuid*. These objects also contain a *_parents* which contains the _uuid of the parents. This allows to create a new reference for the parent objects. For example :
+
+    a = [1, 2, 3]
+    b = [..., a, ...]  # A list containing a
+    c = { ..., 'element': a , ... }  # A dict containing a
+
+*a._parents* will contain the _uuid of *b* and *c*. This allows to create a new reference for *b* and *c* whenever *a* changes.
+
+Note : An object has an internal variable *$d* (dollar sign + d) that is a dict and that contains all the object's variable memebers.
+
+The code related to the references update is in *src/persistent.js*. 
+
+Most of the modifications are in *src/compile.js* and their aim is to call the rights functions of *src/persistent.js* within the javascript code generated from the python one.
+
+The generated javascript code is visible in Codecast's console when you hit "Compile". It is also possible to add a "debugger;" instruction within the generated code if you add
+
+    out("debugger;");
+
+at the place you want in *src/compile.js*/
+
+
+# Development
+
+    npm run watch
+
+It updates dist/skulpt.js every time there is a modification in the source.
+
+
+# Build
+
+    npm run dist
+
+You can then get the file *dist/skulpt.min.js* and replace Codecast's skulpt file.
+
+
 # Welcome to Skulpt
 
 [![Join the chat at https://gitter.im/skulpt/skulpt](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/skulpt/skulpt?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)

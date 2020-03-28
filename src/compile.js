@@ -112,6 +112,7 @@ Compiler.prototype.annotateSource = function (ast) {
 
         Sk.asserts.assert(ast.lineno !== undefined && ast.col_offset !== undefined);
         out("$currLineNo = ", lineno, ";\n$currColNo = ", col_offset, ";\n\n");
+        out("var $__loaded_references = {};");
     }
 };
 
@@ -204,11 +205,20 @@ Compiler.prototype._gr = function (hint, rest) {
     var i;
     var v = this.gensym(hint);
     this.u.localtemps.push(v);
+
     out("var ", v, "=");
-    for (i = 1; i < arguments.length; ++i) {
+    for (let i = 1; i < arguments.length; ++i) {
         out(arguments[i]);
     }
     out(";");
+
+    if (hint === "loadname") {
+        this.markLoadedName(arguments[5]); // 5th argument is the variable's name.
+        this.markLoadedReference(v);
+    } else if (hint === "lsubscr" || hint === "gitem" || hint === "lattr") {
+        this.markLoadedReference("$ret");
+    }
+
     return v;
 };
 
@@ -228,6 +238,9 @@ Compiler.prototype.outputInterruptTest = function () { // Added by RNL
             output += "var $susp = $saveSuspension({data: {type: 'Sk.yield'}, resume: function() {}}, '"+this.filename+"',$currLineNo,$currColNo);";
             output += "$susp.$blk = $blk;";
             output += "$susp.optional = true;";
+            output += "if ($__loaded_references) {";
+            output += "$susp.$loaded_references = $__loaded_references;";
+            output += "}";
             output += "return $susp;";
             output += "}";
             this.u.doesSuspend = true;
@@ -350,7 +363,7 @@ Compiler.prototype.ctuplelistorset = function(e, data, tuporlist) {
         out("$ret = Sk.abstr.sequenceUnpack(" + data + "," + breakIdx + "," + numvals + ", " + hasStars + ");");
         this._checkSuspension();
         items = this._gr("items", "$ret");
-        
+
         for (i = 0; i < e.elts.length; ++i) {
             if (i === starIdx) {
                 this.vexpr(e.elts[i].value, items + "[" + i + "]");
@@ -505,7 +518,7 @@ Compiler.prototype.cyield = function(e) {
     }
     nextBlock = this.newBlock("after yield");
     // return a pair: resume target block and yielded value
-    out("return [/*resume*/", nextBlock, ",/*ret*/", val, "];");
+    out(" return [/*resume*/", nextBlock, ",/*ret*/", val, "];");
     this.setBlock(nextBlock);
     return "$gen.gi$sentvalue"; // will either be none if none sent, or the value from gen.send(value)
 };
@@ -584,6 +597,7 @@ Compiler.prototype.ccall = function (e) {
         positionalArgs = "[$gbl.__class__,self]";
     }
     out ("$ret = (",func,".tp$call)?",func,".tp$call(",positionalArgs,",",keywordArgs,") : Sk.misceval.applyOrSuspend(",func,",undefined,undefined,",keywordArgs,",",positionalArgs,");");
+    out("Sk.builtin.registerPromiseReference($ret);");
 
     this._checkSuspension(e);
 
@@ -650,15 +664,157 @@ Compiler.prototype.vslice = function (s, ctx, obj, dataToStore) {
 Compiler.prototype.chandlesubscr = function (ctx, obj, subs, data) {
     if (ctx === Sk.astnodes.Load || ctx === Sk.astnodes.AugLoad) {
         out("$ret = Sk.abstr.objectGetItem(", obj, ",", subs, ", true);");
+        this.markLoadedElement(obj, subs);
         this._checkSuspension();
         return this._gr("lsubscr", "$ret");
     } else if (ctx === Sk.astnodes.Store || ctx === Sk.astnodes.AugStore) {
+        this.generateNewReference(obj, data);
+
+        // $ret = Sk.abstr.objectSetItem($LIST, $INDEX, $VALUE, true);
         out("$ret = Sk.abstr.objectSetItem(", obj, ",", subs, ",", data, ", true);");
+
+        this.updateReferences(obj);
+
         this._checkSuspension();
     } else if (ctx === Sk.astnodes.Del) {
         out("Sk.abstr.objectDelItem(", obj, ",", subs, ");");
     } else {
         Sk.asserts.fail("handlesubscr fail");
+    }
+};
+
+Compiler.prototype.hookAffectation = function (mangled, dataToStore, debug) {
+    // console.log("HOOK_AFFECTATION : " + debug + " [" + mangled + "     =      " + dataToStore + "]");
+
+    // FROM : $loc.varName = value;
+    // out(mangled, "=", dataToStore, ";");
+
+    // If doesn't start with $loc.
+    if (mangled.substr(0, 5) !== "$loc.") {
+        out(mangled, "=", dataToStore, ";");
+
+        return;
+    }
+
+    // TO :   $loc.varName = window.currentPythonRunner.reportValue(value, 'varName');
+    var varName = mangled.substr(5);
+    out("if (" + dataToStore + ".hasOwnProperty('_uuid')) {");
+    out("  $loc.__refs__ = ($loc.hasOwnProperty('__refs__')) ? $loc.__refs__ : [];");
+    out("  if (!$loc.__refs__.hasOwnProperty(" + dataToStore + "._uuid)) {");
+    out("    $loc.__refs__[" + dataToStore + "._uuid] = [];");
+    out("  }");
+    out("  $loc.__refs__[" + dataToStore + "._uuid].push(\"" + varName + "\");");
+    out("}");
+
+    out(mangled, "=", "window.currentPythonRunner.reportValue(", dataToStore, ", '", varName, "');");
+};
+
+/**
+ * Marks a name as loaded.
+ *
+ * @param varName The variable name.
+ */
+Compiler.prototype.markLoadedName = function(varName) {
+    out("$__loaded_references['" + varName + "'] = true;");
+};
+
+Compiler.prototype.markLoadedElement = function(obj, subs) {
+    out("$__loaded_references[" + obj + "._uuid + '_' + " + subs + ".v] = true;");
+
+    // Also mark the internal dict of an object if it's an object.
+    out("if (" + obj + ".hasOwnProperty('$d')) {");
+    out("  $__loaded_references[" + obj + ".$d._uuid + '_' + " + subs + ".v] = true;");
+    out("}");
+};
+
+/**
+ * Marks a reference as loaded.
+ *
+ * @param varName The variable name.
+ */
+Compiler.prototype.markLoadedReference = function(varName) {
+    out("if (typeof " + varName + " !== 'undefined') {");
+    out("  if (" + varName + ".hasOwnProperty('_uuid')) {");
+    out("    $__loaded_references[" + varName + "._uuid] = true;");
+    out("    if (" + varName + ".hasOwnProperty('$d')) {");
+    out("      $__loaded_references[" + varName + ".$d._uuid] = true;");
+    out("    }");
+    out("  }");
+    out("}");
+};
+
+/**
+ * Generates a new reference for an object.
+ *
+ * @param objVariableName The object's variable name.
+ * @param data            The object's data.
+ */
+Compiler.prototype.generateNewReference = function(objVariableName, data) {
+    out("  " + objVariableName, " = ", objVariableName, ".clone(" + data + ");");
+
+    out("var $__cloned_references = {};");
+    out("$__cloned_references[" + objVariableName + "._uuid] = " + objVariableName + ";");
+
+    out("if (" + objVariableName + ".hasOwnProperty('$d')) {");
+    out("  $__cloned_references[" + objVariableName + ".$d._uuid] = " + objVariableName + ".$d;");
+    out("}");
+};
+
+/**
+ * Updates all references of an object.
+ *
+ * @param obj The object.
+ */
+Compiler.prototype.updateReferences = function(obj) {
+    /**
+     * Changes all the references of the object in :
+     *   - Local variables
+     *   - Global variables
+     *   - Functions parameters
+     *   - The promises references in the debugger
+     *   - The object itself
+     *   - Other stack frames (suspensions)
+     */
+
+    out("Sk.builtin.changeReferences($__cloned_references, $loc, " + obj + ");");
+    out("for (var idx in window.currentPythonRunner._debugger.suspension_stack) {");
+    out("  if (idx > 0) {");
+    out("    var $__cur_suspension__ = window.currentPythonRunner._debugger.suspension_stack[idx];");
+    out("    while ($__cur_suspension__) {");
+    out("      if ($__cur_suspension__.hasOwnProperty('$gbl')) {");
+    out("        Sk.builtin.changeReferences($__cloned_references, $__cur_suspension__.$tmps, " + obj + ");");
+    out("        Sk.builtin.changeReferences($__cloned_references, $__cur_suspension__.$loc, " + obj + ");");
+    out("        Sk.builtin.changeReferences($__cloned_references, $__cur_suspension__.$gbl, " + obj + ");");
+    out("      }");
+    out("      $__cur_suspension__ = $__cur_suspension__.child;");
+    out("    }");
+    out("  }");
+    out("}");
+    out("Sk.builtin.changeReferences($__cloned_references, $gbl, " + obj + ");");
+
+    out("window.currentPythonRunner._debugger.updatePromiseReference(" + obj + ");");
+
+    /**
+     * If some elements within the list have been cloned during the changes of references process,
+     * then we need to put those cloned elements in the list.
+     */
+    out(obj + ".updateReferencesInside($__cloned_references);");
+
+    /**
+     * Update the function's parameters variables if required.
+     *
+     * Skulpt access those variables directly by their name.
+     * eg: test(a) has a "var a" in the local scope.
+     */
+    if (this.u.localnames.length) {
+        const localnames = [...new Set(this.u.localnames)];
+
+        for (let idx in localnames) {
+            const varname = localnames[idx];
+            out("if (" + varname + " && " + varname + ".hasOwnProperty('_uuid') && $__cloned_references.hasOwnProperty(" + varname + "._uuid)) {");
+            out("  " + varname + " = $__cloned_references[" + varname + "._uuid];");
+            out("}");
+        }
     }
 };
 
@@ -809,12 +965,12 @@ Compiler.prototype.vexpr = function (e, data, augvar, augsubs) {
             if (typeof e.n === "number") {
                 return e.n;
             } else if (e.n instanceof Sk.builtin.lng) {
-                return this.makeConstant("new Sk.builtin.lng('" + e.n.v.toString() + "')"); 
+                return this.makeConstant("new Sk.builtin.lng('" + e.n.v.toString() + "')");
             } else if (e.n instanceof Sk.builtin.int_) {
                 if (typeof e.n.v === "number") {
                     return this.makeConstant("new Sk.builtin.int_(" + e.n.v + ")");
                 }
-                return this.makeConstant("new Sk.builtin.int_('" + e.n.v.toString() + "')"); 
+                return this.makeConstant("new Sk.builtin.int_('" + e.n.v.toString() + "')");
             } else if (e.n instanceof Sk.builtin.float_) {
                 // Preserve sign of zero for floats
                 nStr = e.n.v === 0 && 1/e.n.v === -Infinity ? "-0" : e.n.v;
@@ -849,6 +1005,7 @@ Compiler.prototype.vexpr = function (e, data, augvar, augsubs) {
             switch (e.ctx) {
                 case Sk.astnodes.AugLoad:
                     out("$ret = ", augvar, ".tp$getattr(", mname, ", true);");
+                    this.markLoadedElement(augvar, mname);
                     this._checkSuspension(e);
                     out("\nif ($ret === undefined) {");
                     out("\nthrow new Sk.builtin.AttributeError(", augvar, ".sk$attrError() + \" has no attribute '\" + ", mname,".$jsstr() + \"'\");");
@@ -856,6 +1013,7 @@ Compiler.prototype.vexpr = function (e, data, augvar, augsubs) {
                     return this._gr("lattr", "$ret");
                 case Sk.astnodes.Load:
                     out("$ret = ", val, ".tp$getattr(", mname, ", true);");
+                    this.markLoadedElement(val, mname);
                     this._checkSuspension(e);
                     out("\nif ($ret === undefined) {");
                     out("\nthrow new Sk.builtin.AttributeError(", val, ".sk$attrError() + \" has no attribute '\" + ", mname,".$jsstr() + \"'\");");
@@ -868,11 +1026,17 @@ Compiler.prototype.vexpr = function (e, data, augvar, augsubs) {
                     out("$ret = undefined;");
                     out("if(", data, "!==undefined){");
                     out("$ret = ",augvar, ".tp$setattr(", mname, ",", data, ", true);");
+                    //out("console.log('AugStore ret ',$ret);");
                     out("}");
                     this._checkSuspension(e);
                     break;
                 case Sk.astnodes.Store:
+                    this.generateNewReference(val, data);
+
                     out("$ret = ", val, ".tp$setattr(", mname, ",", data, ", true);");
+                    out("Sk.builtin.registerParentReferenceInChild(" + val + ", " + data + ");");
+
+                    this.updateReferences(val);
                     this._checkSuspension(e);
                     break;
                 case Sk.astnodes.Del:
@@ -888,6 +1052,7 @@ Compiler.prototype.vexpr = function (e, data, augvar, augsubs) {
             switch (e.ctx) {
                 case Sk.astnodes.AugLoad:
                     out("$ret = Sk.abstr.objectGetItem(",augvar,",",augsubs,", true);");
+                    this.markLoadedElement(augvar, augsubs);
                     this._checkSuspension(e);
                     return this._gr("gitem", "$ret");
                 case Sk.astnodes.Load:
@@ -901,7 +1066,7 @@ Compiler.prototype.vexpr = function (e, data, augvar, augsubs) {
 
                     out("$ret=undefined;");
                     out("if(", data, "!==undefined){");
-                    out("$ret=Sk.abstr.objectSetItem(",augvar,",",augsubs,",",data,", true)");
+                    out("  $ret=Sk.abstr.objectSetItem(",augvar,",",augsubs,",",data,", true)");
                     out("}");
                     this._checkSuspension(e);
                     break;
@@ -1114,12 +1279,36 @@ Compiler.prototype.outputSuspensionHelpers = function (unit) {
     var localsToSave = unit.localnames.concat(unit.tempsToSave);
     var seenTemps = {};
     var hasCell = unit.ste.blockType === Sk.SYMTAB_CONSTS.FunctionBlock && unit.ste.childHasFree;
+
+    var saveFunctionName = "";
+    if (unit.hasOwnProperty("name") && unit.name) {
+        saveFunctionName = "susp._name='" + unit.name.v + "'; ";
+    }
+    var saveFunctionArgNames = "susp._argnames=[]; ";
+    if (unit.hasOwnProperty("argnames") && unit.argnames) {
+        var uniqueNames = unit.argnames.filter(function(value, index, self) {
+            return self.indexOf(value) === index;
+        });
+
+        saveFunctionArgNames = "susp._argnames=[" + uniqueNames.map((name) => '"' + name + '"') + "]; ";
+    }
+    var saveScopeName = "";
+    if (unit.hasOwnProperty('scopename') && unit.scopename) {
+        saveScopeName = "susp._scopename='" + unit.scopename + "'; ";
+    }
+
     var output = (localsToSave.length > 0 ? ("var " + localsToSave.join(",") + ";") : "") +
-                 "var $wakeFromSuspension = function() {" +
-                    "var susp = "+unit.scopename+".$wakingSuspension; "+unit.scopename+".$wakingSuspension = undefined;" +
-                    "$blk=susp.$blk; $loc=susp.$loc; $gbl=susp.$gbl; $exc=susp.$exc; $err=susp.$err; $postfinally=susp.$postfinally;" +
-                    "$currLineNo=susp.$lineno; $currColNo=susp.$colno; Sk.lastYield=Date.now();" +
-                    (hasCell?"$cell=susp.$cell;":"");
+         "var $wakeFromSuspension = function() {" +
+         "var susp = "+unit.scopename+".$wakingSuspension; "+unit.scopename+".$wakingSuspension = undefined;";
+    output +=  "$blk=susp.$blk; ";
+
+    // output += " $loc={...susp.$loc}; $gbl=susp.$gbl; ";
+    output += " $loc=susp.$loc; $gbl=susp.$gbl; ";
+    // output += "if (susp._name === '<module>') { $loc=susp.$loc; $gbl=susp.$gbl; } else { $loc={...susp.$loc}; $gbl=susp.$gbl; }";
+
+    output += " $exc=susp.$exc; $err=susp.$err; $postfinally=susp.$postfinally;" +
+         "$currLineNo=susp.$lineno; $currColNo=susp.$colno; Sk.lastYield=Date.now(); " +
+         (hasCell?"$cell=susp.$cell;":"");
 
     for (i = 0; i < localsToSave.length; i++) {
         t = localsToSave[i];
@@ -1138,16 +1327,30 @@ Compiler.prototype.outputSuspensionHelpers = function (unit) {
                 "susp.data=susp.child.data;susp.$blk=$blk;susp.$loc=$loc;susp.$gbl=$gbl;susp.$exc=$exc;susp.$err=$err;susp.$postfinally=$postfinally;" +
                 "susp.$filename=$filename;susp.$lineno=$lineno;susp.$colno=$colno;" +
                 "susp.optional=susp.child.optional;" +
+                saveFunctionName + saveFunctionArgNames + saveScopeName +
                 (hasCell ? "susp.$cell=$cell;" : "");
 
     seenTemps = {};
+    output += "var $__tmpsReferences__ = {};";
     for (i = 0; i < localsToSave.length; i++) {
         t = localsToSave[i];
         if (seenTemps[t]===undefined) {
             localSaveCode.push("\"" + t + "\":" + t);
             seenTemps[t]=true;
+
+            // Save references int $tmp.__refs__
+
+            output += "if (" + t + " && " + t + " .hasOwnProperty('_uuid')) {";
+            output += "  if (!$__tmpsReferences__.hasOwnProperty(" + t + "._uuid)) {";
+            output += "    $__tmpsReferences__[" + t + "._uuid] = [];";
+            output += "  }";
+            output += "  $__tmpsReferences__[" + t + "._uuid].push(\"" + t + "\");";
+            output += "}";
         }
     }
+
+    localSaveCode.push("\"__refs__\":$__tmpsReferences__");
+
     output +=   "susp.$tmps={" + localSaveCode.join(",") + "};" +
                 "return susp;" +
               "};";
@@ -1226,6 +1429,7 @@ Compiler.prototype.cif = function (s) {
         if (s.orelse && s.orelse.length > 0) {
             this._jumpfalse(test, next);
             this.vseqstmt(s.body);
+
             this._jump(end);
 
             this.setBlock(next);
@@ -1275,6 +1479,9 @@ Compiler.prototype.cwhile = function (s) {
                 "var $susp = $saveSuspension({data: {type: '"+suspType+"'}, resume: function() {}}, '"+this.filename+"',"+s.lineno+","+s.col_offset+");",
                 "$susp.$blk = "+debugBlock+";",
                 "$susp.optional = true;",
+                "if ($__loaded_references) {",
+                "  $susp.$loaded_references = $__loaded_references;",
+                "}",
                 "return $susp;",
                 "}");
             this._jump(debugBlock);
@@ -1343,6 +1550,9 @@ Compiler.prototype.cfor = function (s) {
             "var $susp = $saveSuspension({data: {type: '"+suspType+"'}, resume: function() {}}, '"+this.filename+"',"+s.lineno+","+s.col_offset+");",
             "$susp.$blk = "+debugBlock+";",
             "$susp.optional = true;",
+            "if ($__loaded_references) {",
+            "  $susp.$loaded_references = $__loaded_references;",
+            "}",
             "return $susp;",
             "}");
         this._jump(debugBlock);
@@ -2401,10 +2611,14 @@ Compiler.prototype.vstmt = function (s, class_for_super) {
 
     if (Sk.debugging && this.u.canSuspend) {
         debugBlock = this.newBlock("debug breakpoint for line "+s.lineno);
+
         out("if (Sk.breakpoints('"+this.filename+"',"+s.lineno+","+s.col_offset+")) {",
             "var $susp = $saveSuspension({data: {type: 'Sk.debug'}, resume: function() {}}, '"+this.filename+"',"+s.lineno+","+s.col_offset+");",
             "$susp.$blk = " + debugBlock + ";",
             "$susp.optional = true;",
+            "if ($__loaded_references) {",
+            "  $susp.$loaded_references = $__loaded_references;",
+            "}",
             "return $susp;",
             "}");
         this._jump(debugBlock);
@@ -2490,6 +2704,8 @@ Compiler.prototype.vstmt = function (s, class_for_super) {
         default:
             Sk.asserts.fail("unhandled case in vstmt: " + JSON.stringify(s));
     }
+
+    // out("console.log('end of vstmt');");
 };
 
 Compiler.prototype.vseqstmt = function (stmts) {
@@ -2593,7 +2809,8 @@ Compiler.prototype.nameop = function (name, ctx, dataToStore) {
                     out("if (", mangled, " === undefined) { throw new Sk.builtin.UnboundLocalError('local variable \\\'", mangled, "\\\' referenced before assignment'); }\n");
                     return mangled;
                 case Sk.astnodes.Store:
-                    out(mangled, "=", dataToStore, ";");
+                    // out(mangled, "=", dataToStore, ";");
+                    this.hookAffectation(mangled, dataToStore, "1");
                     break;
                 case Sk.astnodes.Del:
                     out("delete ", mangled, ";");
@@ -2608,7 +2825,8 @@ Compiler.prototype.nameop = function (name, ctx, dataToStore) {
                     // can't be || for loc.x = 0 or null
                     return this._gr("loadname", mangled, "!==undefined?", mangled, ":Sk.misceval.loadname('", mangledNoPre, "',$gbl);");
                 case Sk.astnodes.Store:
-                    out(mangled, "=", dataToStore, ";");
+                    // out(mangled, "=", dataToStore, ";");
+                    this.hookAffectation(mangled, dataToStore, "2");
                     break;
                 case Sk.astnodes.Del:
                     out("delete ", mangled, ";");
@@ -2624,7 +2842,8 @@ Compiler.prototype.nameop = function (name, ctx, dataToStore) {
                 case Sk.astnodes.Load:
                     return this._gr("loadgbl", "Sk.misceval.loadname('", mangledNoPre, "',$gbl)");
                 case Sk.astnodes.Store:
-                    out("$gbl.", mangledNoPre, "=", dataToStore, ";");
+                    // out("$gbl.", mangledNoPre, "=", dataToStore, ";");
+                    this.hookAffectation("$gbl." + mangledNoPre, dataToStore, "3");
                     break;
                 case Sk.astnodes.Del:
                     out("delete $gbl.", mangledNoPre);
@@ -2638,7 +2857,8 @@ Compiler.prototype.nameop = function (name, ctx, dataToStore) {
                 case Sk.astnodes.Load:
                     return dict + "." + mangledNoPre;
                 case Sk.astnodes.Store:
-                    out(dict, ".", mangledNoPre, "=", dataToStore, ";");
+                    // out(dict, ".", mangledNoPre, "=", dataToStore, ";");
+                    this.hookAffectation(dict + "." + mangledNoPre, dataToStore, "4");
                     break;
                 case Sk.astnodes.Param:
                     return mangledNoPre;
@@ -2777,7 +2997,8 @@ Compiler.prototype.cmod = function (mod) {
         this.u.varDeclsCode += "if (typeof Sk.lastYield === 'undefined') {Sk.lastYield = Date.now()}";
     }
 
-    this.u.varDeclsCode += "if ("+modf+".$wakingSuspension!==undefined) { $wakeFromSuspension(); }" +
+    // TODO: Check here.
+    this.u.varDeclsCode += "if ("+modf+".$wakingSuspension!==undefined) { $wakeFromSuspension(); }"; +
         "if (Sk.retainGlobals) {" +
         "    if (Sk.globals) { $gbl = Sk.globals; Sk.globals = $gbl; $loc = $gbl; }" +
         "    if (Sk.globals) { $gbl = Sk.globals; Sk.globals = $gbl; $loc = $gbl; $loc.__file__=new Sk.builtins.str('" + this.filename + "');}" +
@@ -2815,6 +3036,7 @@ Compiler.prototype.cmod = function (mod) {
     switch (mod.constructor) {
         case Sk.astnodes.Module:
             this.cbody(mod.body);
+            // out("console.log('cmod ast return'); return $loc;");
             out("return $loc;");
             break;
         default:
@@ -2856,6 +3078,7 @@ Sk.compile = function (source, filename, mode, canSuspend) {
     Sk.__future__ = savedFlags;
 
     var ret = "$compiledmod = function() {" + c.result.join("") + "\nreturn " + funcname + ";}();";
+
     return {
         funcname: "$compiledmod",
         code    : ret

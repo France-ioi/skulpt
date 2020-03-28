@@ -173,6 +173,11 @@ Sk.builtin.file.$readline = function (self, size, prompt) {
                     throw susp.data.error;
                 }
 
+                // For codecast player mode.
+                if (typeof susp.data.result === "object" && susp.data.result.type === "future_value") {
+                    return new Sk.builtin.str(susp.data.result.value);
+                }
+
                 return new Sk.builtin.str(susp.data.result);
             };
 

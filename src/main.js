@@ -83,7 +83,6 @@ require("./timsort.js");
 require("./super.js");
 require("./builtindict.js");
 require("./constants.js");
-require("./internalpython.js");
 require("./persistent.js");
 
 /* jshint ignore:end */

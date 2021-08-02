@@ -14,7 +14,7 @@ Sk.builtin.list = Sk.abstr.buildNativeClass("list", {
             // internal calls to constructor can't suspend - avoid using this;
         }
         Sk.asserts.assert(this instanceof Sk.builtin.list, "bad call to list, use 'new' with an Array of python objects");
-        Sk.builtin.listInitPersistent(this, v, uuid);
+        Sk.builtin.listInitPersistent(this, L, uuid);
         this.v = L;
         this.in$repr = false;
         this.uuid = uuid;

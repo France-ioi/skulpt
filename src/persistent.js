@@ -159,7 +159,7 @@ Sk.builtin.list.prototype["clone"] = function(newElementValue) {
         }
     }
 
-    const clone = new Sk.builtin.list(items, true, this._uuid);
+    const clone = new Sk.builtin.list(items, this._uuid);
 
     // If the list contains itself, update those references.
     for (let idx in thisInKeys) {

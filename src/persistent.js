@@ -260,10 +260,21 @@ Sk.builtin.object.prototype["clone"] = function(newElementValue, clonedReference
      * Possible workaround : Find a way to copy an object. But copying only the
      * attributes doesn't work, so it would require something else.
      */
-    //const newObject = this;
+    const newObject = this;
 
     // Try to overcome to above warning.
-    const newObject = Object.create(this);
+    // const newObject = Object.assign(Object.create(Object.getPrototypeOf(this)), this);
+
+    // Plot twist: that doesn't work with class objects and with the following code. So let's not try to overcome warnings.
+    //
+    // class Person:
+    // def __init__(self, name, age):
+    // self.name = name
+    // self.age = age
+    //
+    // p1 = Person("John", 36)
+    //
+    // print(p1.name)
 
     // New reference id.
     newObject._ref_uuid = uuidv4();
@@ -279,8 +290,8 @@ Sk.builtin.object.prototype["clone"] = function(newElementValue, clonedReference
                 // If the internal dict has already been cloned, just copy it.
                 newObject.$d = clonedReferences[newObject.$d._uuid];
             }
-        } else {
-            newObject[idx] = this[idx];
+        // } else {
+        //     newObject[idx] = this[idx];
         }
     }
 

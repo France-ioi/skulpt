@@ -1033,7 +1033,6 @@ Compiler.prototype.vexpr = function (e, data, augvar, augsubs) {
                 case Sk.astnodes.Store:
                     this.generateNewReference(val, data);
 
-                    out("debugger;");
                     out("$ret = ", val, ".tp$setattr(", mname, ",", data, ", true);");
                     out("Sk.builtin.registerParentReferenceInChild(" + val + ", " + data + ");");
 

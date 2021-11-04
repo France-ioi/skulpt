@@ -1,6 +1,7 @@
+const {v4: uuidv4} = require("uuid");
 /**
  * @namespace Sk.misceval
- * 
+ *
  * @description
  * Various function protocols that include suspension aware options
  * As well as handling some common pyObject operations to Javascript
@@ -23,7 +24,7 @@ Sk.misceval = {};
 /**
  * @description
  * Hi kids lets make a suspension...
- * 
+ *
  * @constructor
  * @param {function(?)=} resume A function to be called on resume. child is resumed first and its return value is passed to this function.
  * @param {Object=} child A child suspension. 'optional' will be copied from here if supplied.
@@ -67,7 +68,7 @@ Sk.exportSymbol("Sk.misceval.retryOptionalSuspensionOrThrow", Sk.misceval.retryO
 /**
  * @description
  * Check if the given object is valid to use as an index. Only ints, or if the object has an `__index__` method.
- * 
+ *
  * @param {pyObject} o - typically an {@link Sk.builtin.int_} legacy code might use a js number
  * @returns {boolean}
  */
@@ -98,9 +99,9 @@ function asIndexOrThrow(index, msg) {
 }
 
 /**
- * 
- * @param {*} index 
- * 
+ *
+ * @param {*} index
+ *
  * @description
  * will return an integer javascript number
  * if the value is larger than Number.MAX_SAFE_INTEGER will return a BigInt
@@ -112,11 +113,11 @@ Sk.misceval.asIndex = asIndex;
 
 
 /**
- * 
- * @param {*} index 
+ *
+ * @param {*} index
  * @param {Sk.builtin.Exception=} Err provided an excption type if you wish to throw an exception
  * @param {string} msg an option message if the index passed is not a valid indexable object
- * 
+ *
  * @description
  * this function will always return a `Number` whose size is less than `Number.MAX_SAFE_INTEGER`
  * If you provide an err then this function will throw an error if the index is larger than `Number.MAX_SAFE_INTEGER`
@@ -134,8 +135,8 @@ Sk.misceval.asIndexSized = function (index, Err, msg) {
 
 /**
  * @function
- * 
- * @param {pyObject|number} index - typically an {@link Sk.builtin.int_} legacy code might use a js number 
+ *
+ * @param {pyObject|number} index - typically an {@link Sk.builtin.int_} legacy code might use a js number
  * @param {string=} msg - an optional message when throwing the TypeError
  * @throws {Sk.builtin.TypeError}
  *
@@ -144,10 +145,10 @@ Sk.misceval.asIndexSized = function (index, Err, msg) {
  * throws a TypeError that the object cannot be interpreted as an index
  * can provide a custom message
  * include {tp$name} in the custom message which will be replaced by the typeName of the object
- * 
- * - converts the `Sk.builtin.int_` 
+ *
+ * - converts the `Sk.builtin.int_`
  * - if the number is too large to be safe returns a string
- * @returns {number|BigInt|JSBI} 
+ * @returns {number|BigInt|JSBI}
  */
 Sk.misceval.asIndexOrThrow = asIndexOrThrow;
 
@@ -212,16 +213,16 @@ Sk.exportSymbol("Sk.misceval.arrayFromArguments", Sk.misceval.arrayFromArguments
 
 
 /**
- * 
+ *
  * @constructor
- * 
+ *
  * @param {Function} fn
  * @param {boolean=} [handlesOwnSuspensions=false] - Does it handle its own suspension?
- * 
+ *
  * @description
  * Create a generic Python iterator that repeatedly calls a given JS function
  * until it returns 'undefined'. This function is useful for user defined Native classes
- * 
+ *
  * @example
  * // some immutable tuple like class where the v property is an array
  * MyClass.prototype.tp$iter = function() {
@@ -230,7 +231,7 @@ Sk.exportSymbol("Sk.misceval.arrayFromArguments", Sk.misceval.arrayFromArguments
  *   return new Sk.miscival.iterator(() => i >= len ? this.v[i++] : undefined);
  * }
  * @extends {Sk.builtin.object}
- * 
+ *
  */
 Sk.misceval.iterator = Sk.abstr.buildIteratorClass("iterator", {
     constructor : function iterator (fn, handlesOwnSuspensions) {
@@ -242,7 +243,7 @@ Sk.misceval.iterator = Sk.abstr.buildIteratorClass("iterator", {
                 return Sk.misceval.retryOptionalSuspensionOrThrow(x);
             }
         };
-    }, 
+    },
     iternext: function (canSuspend) { /* keep slot __next__ happy */
         return this.tp$iternext(canSuspend);
     },
@@ -277,17 +278,17 @@ Sk.misceval.opSymbols = {
 
 /**
  * @function
- * 
+ *
  * @param {pyObject} v
  * @param {pyObject} w
  * @param {string} op - `Eq`, `NotEq`, `Lt`, `LtE`, `Gt`, `GtE`, `Is`, `IsNot`, `In_`, `NotIn`
  * @param {boolean=} canSuspend
- * 
+ *
  * @returns {boolean}
- * 
+ *
  * @todo This implementation overrides the return value from a user defined dunder method since it returns a boolean
  * whereas Python will return the user defined return value.
- * 
+ *
  * @throws {Sk.builtin.TypeError}
  */
 Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
@@ -456,8 +457,8 @@ Sk.misceval.richCompareBool = function (v, w, op, canSuspend) {
         }
     }
     if ((ret = v[shortcut](w)) !== Sk.builtin.NotImplemented.NotImplemented$) {
-        return Sk.misceval.isTrue(ret); 
-        // techincally this is not correct along with the compile code 
+        return Sk.misceval.isTrue(ret);
+        // techincally this is not correct along with the compile code
         // richcompare slots could return any pyObject ToDo - would require changing compile code
     }
 
@@ -575,7 +576,7 @@ Sk.exportSymbol("Sk.misceval.richCompareBool", Sk.misceval.richCompareBool);
  * calls the __repr__ of a pyObject or returns `<unknown>` if a JS object was passed
  * @param {*} obj
  * @returns {string}
- * 
+ *
  */
 Sk.misceval.objectRepr = function (obj) {
     Sk.asserts.assert(obj !== undefined, "trying to repr undefined");
@@ -613,7 +614,7 @@ Sk.exportSymbol("Sk.misceval.opAllowsEquality", Sk.misceval.opAllowsEquality);
  * @description
  * Decides whether a pyObject is True or not
  * @returns {boolean}
- * @param {*} x 
+ * @param {*} x
  */
 Sk.misceval.isTrue = function (x) {
     if (x === true || x === Sk.builtin.bool.true$) {
@@ -669,7 +670,7 @@ Sk.exportSymbol("Sk.misceval.print_", Sk.misceval.print_);
 
 /**
  * @function
- * @description 
+ * @description
  * Get a python object from a given namespace
  * @param {string} name
  * @param {Object=} other generally globals
@@ -815,7 +816,7 @@ Sk.exportSymbol("Sk.misceval.callsim", Sk.misceval.callsim);
  * @param {Object=} func the thing to call
  * @param {Array=} args an array of arguments to pass to the func
  * @param {Array=} kws an array of string/pyObject pairs to pass to the func as kwargs
- * 
+ *
  * @description
  * Call a pyObject - if the object is not callable will throw a TypeError
  * Requires args to be a Javascript array.
@@ -853,9 +854,9 @@ Sk.exportSymbol("Sk.misceval.callsimOrSuspend", Sk.misceval.callsimOrSuspend);
 /**
  * @description
  * Does the same thing as callsimOrSuspend without expensive call to
- * Array.slice.  Requires args+kws to be Javascript arrays. 
- * The preferred method for calling a pyObject. 
- * 
+ * Array.slice.  Requires args+kws to be Javascript arrays.
+ * The preferred method for calling a pyObject.
+ *
  * @param {Object=} func the thing to call
  * @param {Array=} args an array of arguments to pass to the func
  * @param {Array=} kws an array of keyword arguments to pass to the func
@@ -1158,7 +1159,7 @@ Sk.exportSymbol("Sk.misceval.iterFor", Sk.misceval.iterFor);
 /**
  * @function
  * @description
- * 
+ *
  * As per iterFor but with an array rather than a python iterable
  * Useful for iterating over args where doing so could result in a suspension
  *

@@ -4,6 +4,7 @@
  * @description
  * All the builtin types as well as useful functions
  */
+const {v4: uuidv4} = require("uuid");
 if (Sk.builtin === undefined) {
     Sk.builtin = {};
 }
@@ -136,6 +137,14 @@ function tp$new(args, kwargs) {
         // klass is essentially a function that gives its instances a dict
         // if we support slots then we might need to have two versions of this
         this.$d = new Sk.builtin.dict();
+
+        /**
+         * The constructor of Sk.builtin.object is not called when a new object is created.
+         * "klass" is used for this, so we add the references here.
+         */
+        this._ref_uuid = uuidv4();
+        this._uuid = uuidv4();
+
         Sk.builtin.registerParentReferenceInChild(this, this.$d);
     };
     setUpKlass($name, klass, bases, this.constructor);

@@ -4,6 +4,24 @@
 const uuidv4 = require("uuid").v4;
 
 /**
+ * Return the current susp. It is the one that has a $tmps property. If it doesn't, look into its child.
+ *
+ * @param {object} susp The suspension.
+ *
+ * @returns object|null
+ */
+const getCurrentSusp = function(susp) {
+    if (susp.hasOwnProperty("$tmps")) {
+        return susp;
+    }
+    if (susp.hasOwnProperty("child")) {
+        return getCurrentSusp(susp.child);
+    }
+
+    return null;
+};
+
+/**
  * @namespace Sk.builtin
  */
 
@@ -13,10 +31,13 @@ const uuidv4 = require("uuid").v4;
  * @param susp The suspension.
  */
 Sk.builtin.registerPromiseReference = function(susp) {
-    if (susp && susp.child && susp.child.$tmps) {
-        var __selfArgName = susp.child._argnames[0];
-        if (susp.child.$tmps[__selfArgName] && susp.child.$tmps[__selfArgName].hasOwnProperty("_uuid")) {
-            window.currentPythonRunner._debugger.registerPromiseReference(susp.child.$tmps[__selfArgName]);
+    const currentSusp = getCurrentSusp(susp);
+
+    if (currentSusp) {
+        const __selfArgName = currentSusp._argnames[0];
+
+        if (currentSusp.$tmps[__selfArgName] && currentSusp.$tmps[__selfArgName].hasOwnProperty("_uuid")) {
+            window.currentPythonRunner._debugger.registerPromiseReference(currentSusp.$tmps[__selfArgName]);
         }
     }
 };
@@ -203,7 +224,7 @@ Sk.builtin.dict.prototype["clone"] = function(newElementValue) {
         }
     }
 
-    // If the list contains itself, update those references.
+    // If the dict contains itself, update those references.
     for (let idx in thisInKeys) {
         clone.mp$ass_subscript(thisInKeys[idx], clone);
     }
@@ -253,31 +274,13 @@ Sk.builtin.dict.prototype["updateReferencesInside"] = function(newReferences) {
 
 
 Sk.builtin.object.prototype["clone"] = function(newElementValue, clonedReferences) {
-    /**
-     * Warning : Only clone the content, not the reference itself.
-     * Then only the internal dict will be persistent and not the object itself.
-     *
-     * Possible workaround : Find a way to copy an object. But copying only the
-     * attributes doesn't work, so it would require something else.
-     */
-    const newObject = this;
-
-    // Try to overcome to above warning.
-    // const newObject = Object.assign(Object.create(Object.getPrototypeOf(this)), this);
-
-    // Plot twist: that doesn't work with class objects and with the following code. So let's not try to overcome warnings.
-    //
-    // class Person:
-    // def __init__(self, name, age):
-    // self.name = name
-    // self.age = age
-    //
-    // p1 = Person("John", 36)
-    //
-    // print(p1.name)
+    const newObject = Object.create(this);
 
     // New reference id.
     newObject._ref_uuid = uuidv4();
+
+    // Copy the _uuid now because it has to be copied before "$d".
+    newObject._uuid = this._uuid;
 
     for (let idx in this) {
         if (idx === "_ref_uuid") {
@@ -290,8 +293,8 @@ Sk.builtin.object.prototype["clone"] = function(newElementValue, clonedReference
                 // If the internal dict has already been cloned, just copy it.
                 newObject.$d = clonedReferences[newObject.$d._uuid];
             }
-        // } else {
-        //     newObject[idx] = this[idx];
+        } else {
+            newObject[idx] = this[idx];
         }
     }
 

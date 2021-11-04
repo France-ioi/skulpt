@@ -45,8 +45,8 @@ Sk.builtin.dict = Sk.abstr.buildNativeClass("dict", {
              */
 
             this._parents = {};
-            for (let idx in this.buckets) {
-                const element = this.buckets[idx].items[0].rhs;
+            for (let idx in this.entries) {
+                const element = this.entries[idx][1];
 
                 Sk.builtin.registerParentReferenceInChild(this, element);
             }
@@ -359,7 +359,7 @@ function getHash(key) {
  * @private
  * @param {Sk.builtin.str} pyName
  * @this {Sk.builtin.dict}
- * 
+ *
  * this is hot code!
  */
 function quick$lookup(pyName) {

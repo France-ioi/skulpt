@@ -14,7 +14,7 @@ const getCurrentSusp = function(susp) {
     if (susp.hasOwnProperty("$tmps")) {
         return susp;
     }
-    if (susp.hasOwnProperty("child")) {
+    if (susp.hasOwnProperty("child") && susp.child) {
         return getCurrentSusp(susp.child);
     }
 

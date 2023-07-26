@@ -690,20 +690,22 @@ Compiler.prototype.hookAffectation = function (mangled, dataToStore, debug) {
     // out(mangled, "=", dataToStore, ";");
 
     // If doesn't start with $loc.
-    if (mangled.substr(0, 5) !== "$loc.") {
+    if (mangled.substr(0, 5) !== "$loc." && mangled.substr(0, 5) !== "$gbl.") {
         out(mangled, "=", dataToStore, ";");
 
         return;
     }
 
-    // TO :   $loc.varName = window.currentPythonRunner.reportValue(value, 'varName');
+    var prefix = mangled.substr(0, 4);
+    
+    // TO :   [prefix].varName = window.currentPythonRunner.reportValue(value, 'varName');
     var varName = mangled.substr(5);
     out("if (" + dataToStore + ".hasOwnProperty('_uuid')) {");
-    out("  $loc.__refs__ = ($loc.hasOwnProperty('__refs__')) ? $loc.__refs__ : [];");
-    out("  if (!$loc.__refs__.hasOwnProperty(" + dataToStore + "._uuid)) {");
-    out("    $loc.__refs__[" + dataToStore + "._uuid] = [];");
+    out("  " + prefix + ".__refs__ = (" + prefix + ".hasOwnProperty('__refs__')) ? " + prefix + ".__refs__ : [];");
+    out("  if (!" + prefix + ".__refs__.hasOwnProperty(" + dataToStore + "._uuid)) {");
+    out("    " + prefix + ".__refs__[" + dataToStore + "._uuid] = [];");
     out("  }");
-    out("  $loc.__refs__[" + dataToStore + "._uuid].push(\"" + varName + "\");");
+    out("  " + prefix + ".__refs__[" + dataToStore + "._uuid].push(\"" + varName + "\");");
     out("}");
 
     out(mangled, "=", "window.currentPythonRunner.reportValue(", dataToStore, ", '", varName, "');");

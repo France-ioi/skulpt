@@ -351,6 +351,7 @@ Sk.Debugger.prototype.resume = function (resolve, reject) {
                  * creation of the Promise, which is done before the call to a method.
                  * We want to get its last reference.
                  */
+                self.registerPromiseReference(value);
                 value = self._promise_references[value._uuid].reference;
                 self._promise_references[value._uuid].nb--;
                 if (self._promise_references[value._uuid].nb < 1) {

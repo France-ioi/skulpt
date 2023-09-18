@@ -83,7 +83,7 @@ Sk.doOneTimeInitialization = function (canSuspend) {
             child.tp$base = bases[0];
         }
         child["$d"] = new Sk.builtin.dict([]);
-        console.log("Sk.doOneTimeInitialization: reference ?");
+        // console.log("Sk.doOneTimeInitialization: reference ?");
         child["$d"].mp$ass_subscript(Sk.builtin.type.basesStr_, new Sk.builtin.tuple(bases));
         child["$d"].mp$ass_subscript(Sk.builtin.type.mroStr_, child.tp$mro);
     };
@@ -328,7 +328,7 @@ Sk.importModuleInternal_ = function (name, dumpJS, modname, suppliedPyBody, rela
                 return lines.join("\n");
             };
             finalcode = withLineNumbers(finalcode);
-            console.log(finalcode);
+            // console.log(finalcode);
             Sk.debugout(finalcode);
         }
         // }

@@ -36,7 +36,7 @@ Sk.builtin.slice = function slice (start, stop, step) {
                                       Sk.builtin.slice$stop, this.stop,
                                       Sk.builtin.slice$step, this.step]);
 
-    console.log("Sk.builtin.slice: reference ?");
+    // console.log("Sk.builtin.slice: reference ?");
 
     return this;
 };

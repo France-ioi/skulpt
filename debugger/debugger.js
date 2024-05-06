@@ -276,8 +276,11 @@ Sk.Debugger.prototype.print_suspension_info = function (suspension) {
     }
 };
 
-Sk.Debugger.prototype.set_suspension = function (suspension) {
-    debuggerLog('set_suspension', suspension);
+Sk.Debugger.prototype.set_suspension = function (suspension, resolve) {
+    debuggerLog('set_suspension', suspension, [...this.suspension_stack], {pop, resolve, onFinish: suspension.onFinish});
+    if (resolve) {
+        suspension.onFinished = resolve;
+    }
 
     var parent = null;
     if (!debuggerHasOwnProperty(suspension, "$filename") && suspension.child instanceof Sk.misceval.Suspension) {
@@ -286,12 +289,17 @@ Sk.Debugger.prototype.set_suspension = function (suspension) {
 
     // Pop the last suspension of the stack if there is more than 0
     if (this.suspension_stack.length > 0) {
-        this.suspension_stack.pop();
-        this.current_suspension -= 1;
+        this.pop_suspension_stack();
+    }
+
+    if (this.suspension_stack.length > 0 && ('nopop' !== pop || !this.suspension_stack[this.current_suspension].child)) {
+        debuggerLog('pop suspension');
+        this.pop_suspension_stack();
     }
 
     // Unroll the stack to get each suspension.
     while (suspension instanceof Sk.misceval.Suspension) {
+        debuggerLog('get parent suspension');
         parent = suspension;
         this.suspension_stack.push(parent);
         this.current_suspension += 1;
@@ -299,6 +307,8 @@ Sk.Debugger.prototype.set_suspension = function (suspension) {
     }
 
     suspension = parent;
+
+    debuggerLog('final suspension stack', [...this.suspension_stack]);
 
     this.print_suspension_info(suspension);
 };
@@ -314,7 +324,17 @@ Sk.Debugger.prototype.add_breakpoint = function (filename, lineno, colno, tempor
 Sk.Debugger.prototype.suspension_handler = function (susp) {
     return new Promise(function (resolve, reject) {
         try {
-            resolve(susp.resume());
+            debuggerLog('suspension handler for susp', susp);
+            const resume = susp.resume();
+            debuggerLog('suspension handler for susp resume', {susp, resume});
+            if (resume instanceof Sk.misceval.Suspension) {
+                resume.onFinished = susp.onFinished;
+                debuggerLog('pass onFinished', susp.onFinished, resume.onFinished);
+            } else if (susp.onFinished) {
+                debuggerLog('finish on finish with return value', resume);
+                susp.onFinished(resume);
+            }
+            resolve(resume);
         } catch (e) {
             reject(e);
         }
@@ -337,6 +357,7 @@ Sk.Debugger.prototype.resume = function (resolve, reject) {
         var promise = this.suspension_handler(this.get_active_suspension());
         var self = this;
         promise.then(function (value) {
+            debuggerLog('suspension handler val', value, value.onFinished);
             if (value && value.data && value.data.promise) {
                 // If waiting for input, wait that it has resolved too before continuing.
                 value.data.promise.then((inputValue) => {
@@ -373,15 +394,16 @@ Sk.Debugger.prototype.resume = function (resolve, reject) {
 };
 
 Sk.Debugger.prototype.pop_suspension_stack = function () {
+    debuggerLog('pop, on finished', this.suspension_stack[this.current_suspension]);
     this.suspension_stack.pop();
     this.current_suspension -= 1;
 };
 
 Sk.Debugger.prototype.success = function (r, resolve, reject) {
-    debuggerLog('success', r, resolve);
+    debuggerLog('success', r, resolve, [...this.suspension_stack], {finished: r.onFinished});
 
     if (r instanceof Sk.misceval.Suspension) {
-        debuggerLog('success suspension');
+        debuggerLog('success suspension', this.output_callback);
         this.set_suspension(r);
         if (this.output_callback != null) {
             this.output_callback._onStepSuccess(resolve);
@@ -403,9 +425,9 @@ Sk.Debugger.prototype.success = function (r, resolve, reject) {
                 return;
             }
 
-            debuggerLog('here we are');
-
             var parent_suspension = this.get_active_suspension();
+            debuggerLog('here we are', parent_suspension);
+
             // The child has completed the execution. So override the child's resume
             // so we can continue the execution.
             parent_suspension.child.resume = function () {
@@ -453,12 +475,14 @@ Sk.Debugger.prototype.error = function (e, reject) {
 Sk.Debugger.prototype.asyncToPromise = function (suspendablefn, suspHandlers, debugger_obj) {
     return new Promise(function (resolve, reject) {
         try {
+            debuggerLog('before call to suspendable');
             var r = suspendablefn();
+            debuggerLog('suspendable result', r);
 
             (function handleResponse(r) {
                 try {
                     while (r instanceof Sk.misceval.Suspension) {
-                        debugger_obj.set_suspension(r);
+                        debugger_obj.set_suspension(r, resolve);
                         return;
                     }
 

@@ -277,7 +277,7 @@ Sk.Debugger.prototype.print_suspension_info = function (suspension) {
 };
 
 Sk.Debugger.prototype.set_suspension = function (suspension, resolve) {
-    debuggerLog('set_suspension', suspension, [...this.suspension_stack], {pop, resolve, onFinish: suspension.onFinish});
+    debuggerLog('set_suspension', suspension, [...this.suspension_stack], {resolve, onFinish: suspension.onFinish});
     if (resolve) {
         suspension.onFinished = resolve;
     }
@@ -292,7 +292,7 @@ Sk.Debugger.prototype.set_suspension = function (suspension, resolve) {
         this.pop_suspension_stack();
     }
 
-    if (this.suspension_stack.length > 0 && ('nopop' !== pop || !this.suspension_stack[this.current_suspension].child)) {
+    if (this.suspension_stack.length > 0) {
         debuggerLog('pop suspension');
         this.pop_suspension_stack();
     }

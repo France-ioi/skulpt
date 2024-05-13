@@ -289,10 +289,6 @@ Sk.Debugger.prototype.set_suspension = function (suspension, resolve) {
 
     // Pop the last suspension of the stack if there is more than 0
     if (this.suspension_stack.length > 0) {
-        this.pop_suspension_stack();
-    }
-
-    if (this.suspension_stack.length > 0) {
         debuggerLog('pop suspension');
         this.pop_suspension_stack();
     }

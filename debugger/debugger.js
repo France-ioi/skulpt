@@ -396,7 +396,7 @@ Sk.Debugger.prototype.pop_suspension_stack = function () {
 };
 
 Sk.Debugger.prototype.success = function (r, resolve, reject) {
-    debuggerLog('success', r, resolve, [...this.suspension_stack], {finished: r.onFinished});
+    debuggerLog('success', r, resolve, [...this.suspension_stack]);
 
     if (r instanceof Sk.misceval.Suspension) {
         debuggerLog('success suspension', this.output_callback);

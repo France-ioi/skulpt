@@ -353,7 +353,7 @@ Sk.Debugger.prototype.resume = function (resolve, reject) {
         var promise = this.suspension_handler(this.get_active_suspension());
         var self = this;
         promise.then(function (value) {
-            debuggerLog('suspension handler val', value, value.onFinished);
+            debuggerLog('suspension handler val', value);
             if (value && value.data && value.data.promise) {
                 // If waiting for input, wait that it has resolved too before continuing.
                 value.data.promise.then((inputValue) => {
